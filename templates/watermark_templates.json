@@ -1,0 +1,98 @@
+{
+  "templates": {
+    "南京大学logo": {
+      "data": {
+        "watermark_type": "image",
+        "text_content": "watermark",
+        "font_name": "Arial",
+        "font_size": 96,
+        "bold": false,
+        "italic": false,
+        "text_color": [
+          255,
+          255,
+          255,
+          255
+        ],
+        "opacity": 80,
+        "position": [
+          0,
+          0
+        ],
+        "rotation": 0,
+        "scale": 204,
+        "shadow_enabled": false,
+        "stroke_enabled": false,
+        "grid_position": 0,
+        "image_path": "D:/Python_Project/Photo Watermark 2/logo/南京大学.png",
+        "image_opacity": 77,
+        "image_scale": 121
+      },
+      "created_at": "2025-09-26T17:12:21.845368",
+      "updated_at": "2025-09-26T17:12:21.845368"
+    },
+    "功能测试模板": {
+      "data": {
+        "watermark_type": "text",
+        "text_content": "测试模板水印",
+        "font_name": "Arial",
+        "font_size": 96,
+        "bold": true,
+        "italic": false,
+        "text_color": [
+          255,
+          0,
+          0,
+          255
+        ],
+        "opacity": 80,
+        "position": [
+          100,
+          100
+        ],
+        "rotation": 45,
+        "scale": 200,
+        "shadow_enabled": true,
+        "stroke_enabled": false,
+        "grid_position": 4,
+        "image_path": "",
+        "image_opacity": 80,
+        "image_scale": 100
+      },
+      "created_at": "2025-09-26T17:43:50.859444",
+      "updated_at": "2025-09-26T17:43:50.859444"
+    },
+    "cat": {
+      "data": {
+        "watermark_type": "text",
+        "text_content": "cat",
+        "font_name": "Arial",
+        "font_size": 96,
+        "bold": false,
+        "italic": false,
+        "text_color": [
+          255,
+          46,
+          119,
+          255
+        ],
+        "opacity": 80,
+        "position": [
+          465,
+          18
+        ],
+        "rotation": 0,
+        "scale": 204,
+        "shadow_enabled": false,
+        "stroke_enabled": false,
+        "grid_position": 0,
+        "image_path": "D:/Python_Project/Photo Watermark 2/logo/南京大学.png",
+        "image_opacity": 77,
+        "image_scale": 121
+      },
+      "created_at": "2025-09-26T18:59:14.317535",
+      "updated_at": "2025-09-26T18:59:14.317535"
+    }
+  },
+  "last_modified": "2025-09-26T18:59:14.317535"
+}

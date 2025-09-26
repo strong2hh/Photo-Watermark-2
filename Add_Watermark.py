@@ -2,13 +2,14 @@ import sys
 import os
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem,
-    QFileDialog, QLineEdit, QComboBox, QSlider, QDialog, QCheckBox, QColorDialog
+    QFileDialog, QLineEdit, QComboBox, QSlider, QDialog, QCheckBox, QColorDialog, QInputDialog, QMessageBox
 )
 from PyQt5.QtGui import QPixmap, QImage, QIcon, QColor, QMouseEvent
 from PyQt5.QtCore import Qt, QSize, QPoint
 from PIL import Image, ImageDraw, ImageFont
 from Picture_import import PhotoWatermarkApp
 from Picture_export import show_export_dialog
+from template_manager import TemplateManager, create_template_data_from_app, apply_template_to_app
 
 class WatermarkApp(QWidget):
     def __init__(self):
@@ -20,7 +21,24 @@ class WatermarkApp(QWidget):
         self.drag_position = QPoint(100, 100)  # 拖拽位置
         self.text_color = QColor(255, 255, 255)  # 默认白色
         self.scale_factor = 1.0  # 缩放因子
+        self.template_manager = TemplateManager()  # 模板管理器
         self.init_ui()
+        self.load_last_settings()  # 加载上次设置
+        
+        # 初始化内部状态变量
+        self.current_text = "watermark"
+        self.current_font_name = "Arial"
+        self.current_font_size = 96
+        self.current_bold = False
+        self.current_italic = False
+        self.current_opacity = 80
+        self.current_rotation = 0
+        self.current_scale = 200
+        self.current_shadow_enabled = False
+        self.current_stroke_enabled = False
+        self.current_grid_position = 4
+        self.current_image_opacity = 80
+        self.current_image_scale = 100
 
     def init_ui(self):
         layout = QHBoxLayout()
@@ -62,17 +80,6 @@ class WatermarkApp(QWidget):
         self.image_radio.toggled.connect(self.toggle_watermark_type)
         type_layout.addWidget(self.image_radio)
         right_layout.addLayout(type_layout)
-
-        # 文本水印设置
-        self.text_settings = QVBoxLayout()
-        text_layout = QHBoxLayout()
-        self.text_edit = QLineEdit()
-        self.text_edit.setPlaceholderText('输入水印文本')
-        self.text_edit.setText('watermark')
-        self.text_edit.textChanged.connect(self.update_preview)
-        text_layout.addWidget(QLabel('水印文本:'))
-        text_layout.addWidget(self.text_edit)
-        self.text_settings.addLayout(text_layout)
 
         # 文本水印设置容器
         self.text_settings_widget = QWidget()
@@ -221,6 +228,29 @@ class WatermarkApp(QWidget):
         scale_layout.addWidget(self.scale_label)
         right_layout.addLayout(scale_layout)
 
+        # 模板管理区域
+        template_layout = QHBoxLayout()
+        
+        self.template_combo = QComboBox()
+        self.template_combo.setMinimumWidth(150)
+        self.template_combo.currentTextChanged.connect(self.on_template_selected)
+        template_layout.addWidget(QLabel('模板:'))
+        template_layout.addWidget(self.template_combo)
+        
+        self.save_template_btn = QPushButton('保存模板')
+        self.save_template_btn.clicked.connect(self.save_template)
+        template_layout.addWidget(self.save_template_btn)
+        
+        self.load_template_btn = QPushButton('加载模板')
+        self.load_template_btn.clicked.connect(self.load_template)
+        template_layout.addWidget(self.load_template_btn)
+        
+        self.delete_template_btn = QPushButton('删除模板')
+        self.delete_template_btn.clicked.connect(self.delete_template)
+        template_layout.addWidget(self.delete_template_btn)
+        
+        right_layout.addLayout(template_layout)
+
         # 导出按钮
         self.export_btn = QPushButton('导出水印图片')
         self.export_btn.clicked.connect(self.export_image)
@@ -232,6 +262,9 @@ class WatermarkApp(QWidget):
         # 初始化图片水印相关变量
         self.watermark_image_path = None
         self.watermark_image = None
+        
+        # 加载模板列表
+        self.refresh_template_list()
 
     def toggle_watermark_type(self):
         """切换水印类型"""
@@ -243,6 +276,7 @@ class WatermarkApp(QWidget):
             self.watermark_type = 'image'
             self.text_settings_widget.setVisible(False)
             self.image_settings_widget.setVisible(True)
+        # 强制更新预览
         self.update_preview()
 
     def select_watermark_image(self):
@@ -260,9 +294,130 @@ class WatermarkApp(QWidget):
                 self.update_preview()
             except Exception as e:
                 self.image_path_label.setText('加载失败')
+                self.update_preview()
+
+    def refresh_template_list(self):
+        """刷新模板列表"""
+        self.template_combo.clear()
+        templates = self.template_manager.get_template_list()
+        self.template_combo.addItem("-- 选择模板 --", "")
+        for template in templates:
+            self.template_combo.addItem(template["name"], template["name"])
         
-        # 初始化预览
-        self.update_preview()
+        # 设置最后使用的模板
+        last_used = self.template_manager.load_last_used_template()
+        if last_used and self.template_manager.template_exists(last_used):
+            index = self.template_combo.findData(last_used)
+            if index >= 0:
+                self.template_combo.setCurrentIndex(index)
+
+    def on_template_selected(self, template_name):
+        """模板选择事件"""
+        if template_name and template_name != "-- 选择模板 --":
+            self.load_template_by_name(template_name)
+
+    def save_template(self):
+        """保存模板"""
+        template_name, ok = QInputDialog.getText(
+            self, '保存模板', '请输入模板名称:',
+            text=f"模板_{len(self.template_manager.get_template_list()) + 1}"
+        )
+        
+        if ok and template_name:
+            if self.template_manager.template_exists(template_name):
+                reply = QMessageBox.question(
+                    self, '模板已存在', 
+                    f'模板 "{template_name}" 已存在，是否覆盖？',
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if reply == QMessageBox.No:
+                    return
+            
+            # 创建模板数据
+            template_data = create_template_data_from_app(self)
+            self.template_manager.save_template(template_name, template_data)
+            self.template_manager.save_last_used_template(template_name)
+            
+            # 刷新模板列表
+            self.refresh_template_list()
+            QMessageBox.information(self, '成功', f'模板 "{template_name}" 保存成功！')
+
+    def load_template(self):
+        """加载模板"""
+        current_template = self.template_combo.currentData()
+        if current_template:
+            self.load_template_by_name(current_template)
+        else:
+            QMessageBox.warning(self, '警告', '请先选择一个模板！')
+
+    def load_template_by_name(self, template_name):
+        """根据名称加载模板"""
+        template_data = self.template_manager.load_template(template_name)
+        if template_data:
+            # 应用模板数据
+            apply_template_to_app(template_data, self)
+            
+            # 更新内部状态变量
+            self.current_text = template_data["text_content"]
+            self.current_font_name = template_data["font_name"]
+            self.current_font_size = template_data["font_size"]
+            self.current_bold = template_data["bold"]
+            self.current_italic = template_data["italic"]
+            self.current_opacity = template_data["opacity"]
+            self.current_rotation = template_data["rotation"]
+            self.current_scale = template_data["scale"]
+            self.current_shadow_enabled = template_data["shadow_enabled"]
+            self.current_stroke_enabled = template_data["stroke_enabled"]
+            self.current_grid_position = template_data["grid_position"]
+            self.current_image_opacity = template_data["image_opacity"]
+            self.current_image_scale = template_data["image_scale"]
+            
+            self.template_manager.save_last_used_template(template_name)
+            self.update_preview()
+            QMessageBox.information(self, '成功', f'模板 "{template_name}" 加载成功！')
+        else:
+            QMessageBox.warning(self, '错误', f'模板 "{template_name}" 加载失败！')
+
+    def delete_template(self):
+        """删除模板"""
+        template_name = self.template_combo.currentData()
+        if not template_name:
+            QMessageBox.warning(self, '警告', '请先选择一个模板！')
+            return
+        
+        reply = QMessageBox.question(
+            self, '确认删除', 
+            f'确定要删除模板 "{template_name}" 吗？',
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            if self.template_manager.delete_template(template_name):
+                self.refresh_template_list()
+                QMessageBox.information(self, '成功', f'模板 "{template_name}" 删除成功！')
+            else:
+                QMessageBox.warning(self, '错误', f'模板 "{template_name}" 删除失败！')
+
+    def load_last_settings(self):
+        """加载上次设置"""
+        # 尝试加载最后使用的模板
+        last_template = self.template_manager.load_last_used_template()
+        if last_template and self.template_manager.template_exists(last_template):
+            template_data = self.template_manager.load_template(last_template)
+            if template_data:
+                apply_template_to_app(template_data, self)
+                return
+        
+        # 如果没有模板，加载当前设置
+        current_settings = self.template_manager.load_current_settings()
+        if current_settings:
+            apply_template_to_app(current_settings, self)
+
+    def closeEvent(self, event):
+        """程序关闭事件 - 保存当前设置"""
+        template_data = create_template_data_from_app(self)
+        self.template_manager.save_current_settings(template_data)
+        event.accept()
 
     def import_images(self):
         # 创建并显示 Picture_import 的弹出窗口
@@ -369,14 +524,17 @@ class WatermarkApp(QWidget):
 
     def get_font_style(self):
         """获取字体样式设置"""
-        font_name = self.font_combo.currentText()
-        font_size = int(self.font_size_spin.currentText())
+        font_name = self.current_font_name if hasattr(self, 'current_font_name') else self.font_combo.currentText()
+        font_size = self.current_font_size if hasattr(self, 'current_font_size') else int(self.font_size_spin.currentText())
         
         # 构建字体样式字符串
         style = ""
-        if self.bold_check.isChecked():
+        bold = self.current_bold if hasattr(self, 'current_bold') else self.bold_check.isChecked()
+        italic = self.current_italic if hasattr(self, 'current_italic') else self.italic_check.isChecked()
+        
+        if bold:
             style += "bold "
-        if self.italic_check.isChecked():
+        if italic:
             style += "italic "
         
         return font_name, font_size, style.strip()
