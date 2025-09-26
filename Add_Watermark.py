@@ -2,7 +2,7 @@ import sys
 import os
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem,
-    QFileDialog, QLineEdit, QComboBox, QSlider, QDialog
+    QFileDialog, QLineEdit, QComboBox, QSlider, QDialog, QCheckBox, QColorDialog
 )
 from PyQt5.QtGui import QPixmap, QImage, QIcon, QColor, QMouseEvent
 from PyQt5.QtCore import Qt, QSize, QPoint
@@ -18,6 +18,8 @@ class WatermarkApp(QWidget):
         self.image_list = []
         self.current_image_path = None
         self.drag_position = QPoint(100, 100)  # 拖拽位置
+        self.text_color = QColor(255, 255, 255)  # 默认白色
+        self.scale_factor = 1.0  # 缩放因子
         self.init_ui()
 
     def init_ui(self):
@@ -58,6 +60,68 @@ class WatermarkApp(QWidget):
         text_layout.addWidget(self.text_edit)
         right_layout.addLayout(text_layout)
 
+        # 字体设置
+        font_layout = QHBoxLayout()
+        self.font_combo = QComboBox()
+        self.font_combo.addItems(["Arial", "Times New Roman", "SimHei", "Microsoft YaHei", "SimSun"])
+        self.font_combo.currentIndexChanged.connect(self.update_preview)
+        font_layout.addWidget(QLabel('字体:'))
+        font_layout.addWidget(self.font_combo)
+        
+        self.font_size_spin = QComboBox()
+        self.font_size_spin.addItems(["96", "128", "160", "192", "256", "320", "480", "640"])
+        self.font_size_spin.setCurrentText("96")
+        self.font_size_spin.currentTextChanged.connect(self.update_preview)
+        font_layout.addWidget(QLabel('字号:'))
+        font_layout.addWidget(self.font_size_spin)
+        
+        self.bold_check = QCheckBox('粗体')
+        self.bold_check.stateChanged.connect(self.update_preview)
+        font_layout.addWidget(self.bold_check)
+        
+        self.italic_check = QCheckBox('斜体')
+        self.italic_check.stateChanged.connect(self.update_preview)
+        font_layout.addWidget(self.italic_check)
+        
+        right_layout.addLayout(font_layout)
+
+        # 颜色和透明度
+        color_layout = QHBoxLayout()
+        self.color_btn = QPushButton('选择颜色')
+        self.color_btn.clicked.connect(self.choose_color)
+        color_layout.addWidget(QLabel('颜色:'))
+        color_layout.addWidget(self.color_btn)
+        
+        self.color_label = QLabel()
+        self.color_label.setFixedSize(30, 30)
+        self.color_label.setStyleSheet("background-color: white; border: 1px solid black;")
+        color_layout.addWidget(self.color_label)
+        
+        self.opacity_slider = QSlider(Qt.Horizontal)
+        self.opacity_slider.setRange(0, 100)
+        self.opacity_slider.setValue(80)
+        self.opacity_slider.valueChanged.connect(self.update_preview)
+        self.opacity_slider.valueChanged.connect(self.update_opacity_label)
+        color_layout.addWidget(QLabel('透明度:'))
+        color_layout.addWidget(self.opacity_slider)
+        
+        self.opacity_label = QLabel('80%')
+        color_layout.addWidget(self.opacity_label)
+        
+        right_layout.addLayout(color_layout)
+
+        # 阴影和描边效果
+        effect_layout = QHBoxLayout()
+        self.shadow_check = QCheckBox('阴影效果')
+        self.shadow_check.stateChanged.connect(self.update_preview)
+        effect_layout.addWidget(self.shadow_check)
+        
+        self.stroke_check = QCheckBox('描边效果')
+        self.stroke_check.stateChanged.connect(self.update_preview)
+        effect_layout.addWidget(self.stroke_check)
+        
+        right_layout.addLayout(effect_layout)
+
         # 九宫格布局
         grid_layout = QHBoxLayout()
         self.grid_combo = QComboBox()
@@ -76,6 +140,20 @@ class WatermarkApp(QWidget):
         rotate_layout.addWidget(QLabel('旋转角度:'))
         rotate_layout.addWidget(self.rotate_slider)
         right_layout.addLayout(rotate_layout)
+
+        # 缩放控制
+        scale_layout = QHBoxLayout()
+        self.scale_slider = QSlider(Qt.Horizontal)
+        self.scale_slider.setRange(50, 1000)  # 50% 到 1000%
+        self.scale_slider.setValue(200)
+        self.scale_slider.valueChanged.connect(self.update_preview)
+        self.scale_slider.valueChanged.connect(self.update_scale_label)
+        scale_layout.addWidget(QLabel('缩放比例:'))
+        scale_layout.addWidget(self.scale_slider)
+        
+        self.scale_label = QLabel('200%')
+        scale_layout.addWidget(self.scale_label)
+        right_layout.addLayout(scale_layout)
 
         # 导出按钮
         self.export_btn = QPushButton('导出水印图片')
@@ -148,11 +226,14 @@ class WatermarkApp(QWidget):
         y = max(0, min(self.drag_position.y(), h - wh))
         return (x, y)
 
-    # 鼠标事件处理 - 拖拽功能
+    # 鼠标事件处理 - 拖拽和缩放功能
     def preview_mouse_press(self, event: QMouseEvent):
         if event.button() == Qt.LeftButton:
             self.drag_start = event.pos()
             self.dragging = True
+        elif event.button() == Qt.RightButton:
+            self.scale_start = event.pos()
+            self.scaling = True
 
     def preview_mouse_move(self, event: QMouseEvent):
         if hasattr(self, 'dragging') and self.dragging:
@@ -161,10 +242,80 @@ class WatermarkApp(QWidget):
             self.drag_position += delta
             self.drag_start = event.pos()
             self.update_preview()
+        elif hasattr(self, 'scaling') and self.scaling:
+            # 更新缩放比例（右键拖拽垂直方向）
+            delta_y = event.pos().y() - self.scale_start.y()
+            scale_change = delta_y / 10.0  # 每10像素改变1%
+            new_scale = max(50, min(1000, self.scale_slider.value() - scale_change))
+            self.scale_slider.setValue(int(new_scale))
+            self.scale_start = event.pos()
 
     def preview_mouse_release(self, event: QMouseEvent):
         if event.button() == Qt.LeftButton:
             self.dragging = False
+        elif event.button() == Qt.RightButton:
+            self.scaling = False
+
+    def choose_color(self):
+        color = QColorDialog.getColor(self.text_color, self, "选择水印颜色")
+        if color.isValid():
+            self.text_color = color
+            self.color_label.setStyleSheet(f"background-color: {color.name()}; border: 1px solid black;")
+            self.update_preview()
+
+    def update_opacity_label(self, value):
+        self.opacity_label.setText(f"{value}%")
+
+    def update_scale_label(self, value):
+        self.scale_label.setText(f"{value}%")
+
+    def get_font_style(self):
+        """获取字体样式设置"""
+        font_name = self.font_combo.currentText()
+        font_size = int(self.font_size_spin.currentText())
+        
+        # 构建字体样式字符串
+        style = ""
+        if self.bold_check.isChecked():
+            style += "bold "
+        if self.italic_check.isChecked():
+            style += "italic "
+        
+        return font_name, font_size, style.strip()
+
+    def apply_text_effects(self, draw, text, position, font, color):
+        """应用文本效果（阴影、描边和斜体）"""
+        if self.shadow_check.isChecked():
+            # 添加阴影效果
+            shadow_color = (0, 0, 0, color[3])  # 黑色阴影
+            shadow_offset = 2
+            draw.text((position[0] + shadow_offset, position[1] + shadow_offset), 
+                     text, font=font, fill=shadow_color)
+        
+        if self.stroke_check.isChecked():
+            # 添加描边效果
+            stroke_color = (0, 0, 0, color[3])  # 黑色描边
+            stroke_width = 2
+            for dx in range(-stroke_width, stroke_width + 1):
+                for dy in range(-stroke_width, stroke_width + 1):
+                    if dx != 0 or dy != 0:
+                        draw.text((position[0] + dx, position[1] + dy), 
+                                 text, font=font, fill=stroke_color)
+        
+        # 绘制主文本
+        if self.italic_check.isChecked():
+            # 使用简单的斜体模拟 - 在多个位置绘制文本创建倾斜效果
+            base_x, base_y = position
+            # 绘制多个轻微偏移的文本来模拟斜体
+            for offset in range(3):
+                # 每个偏移位置的透明度逐渐降低
+                alpha_factor = 1.0 - (offset * 0.2)
+                italic_alpha = int(color[3] * alpha_factor)
+                italic_color = (color[0], color[1], color[2], italic_alpha)
+                draw.text((base_x + offset, base_y), text, font=font, fill=italic_color)
+        else:
+            # 正常绘制文本
+            draw.text(position, text, font=font, fill=color)
 
     def update_preview(self):
         if not self.current_image_path:
@@ -178,18 +329,58 @@ class WatermarkApp(QWidget):
         # 获取水印文本
         text = self.text_edit.text().strip()
         if not text:
-            text = "水印文本"
+            text = "watermark"
             
-        # 使用默认字体设置
+        # 使用用户设置的字体、颜色和透明度
+        font_name, font_size, font_style = self.get_font_style()
+        opacity = self.opacity_slider.value() / 100.0  # 透明度百分比转小数
+        color = (self.text_color.red(), self.text_color.green(), self.text_color.blue(), int(255 * opacity))
+        scale_factor = self.scale_slider.value() / 100.0  # 缩放因子
+        
         try:
-            # 尝试加载系统字体，设置合适的大小
-            font = ImageFont.truetype("arial.ttf", 128)  # 使用128号字体
+            # 尝试加载用户选择的字体（应用缩放，使用更高质量）
+            scaled_font_size = max(10, int(font_size * scale_factor))
+            
+            # 应用粗体和斜体效果
+            if self.bold_check.isChecked() and self.italic_check.isChecked():
+                # 粗体+斜体
+                try:
+                    font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic", index=3)
+                except:
+                    font = ImageFont.truetype(font_name, int(scaled_font_size * 1.1), encoding="unic")
+            elif self.bold_check.isChecked():
+                # 仅粗体
+                try:
+                    font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic", index=1)
+                except:
+                    font = ImageFont.truetype(font_name, int(scaled_font_size * 1.1), encoding="unic")
+            elif self.italic_check.isChecked():
+                # 仅斜体 - 使用倾斜变换来模拟斜体效果
+                font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic")
+                # 斜体效果将在后续的文本绘制中处理
+            else:
+                # 正常字体
+                font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic")
+                
         except:
-            # 如果失败，使用默认字体但设置更大尺寸
-            font = ImageFont.load_default()
-            # 对于默认字体，我们需要使用更大的尺寸
-        opacity = 0.8  # 默认透明度80%
-        color = (255, 255, 255, int(255 * opacity))  # 默认白色
+            # 如果失败，尝试使用其他字体
+            try:
+                # 尝试使用Arial字体
+                font = ImageFont.truetype("arial.ttf", scaled_font_size, encoding="unic")
+                
+                # 应用粗体和斜体效果
+                if self.bold_check.isChecked():
+                    try:
+                        font = ImageFont.truetype("arialbd.ttf", scaled_font_size, encoding="unic")
+                    except:
+                        bold_size = int(scaled_font_size * 1.1)
+                        font = ImageFont.truetype("arial.ttf", bold_size, encoding="unic")
+                        
+            except:
+                # 如果都失败，使用默认字体但设置更大的尺寸
+                font = ImageFont.load_default()
+                # 对于默认字体，我们需要使用更大的尺寸
+                scaled_font_size = max(10, int(font_size * scale_factor * 3))  # 默认字体三倍大小
             
         # 计算文本尺寸
         # 先创建一个临时图像来计算文本尺寸
@@ -215,12 +406,32 @@ class WatermarkApp(QWidget):
         txt_img = Image.new('RGBA', (w, h), (255, 255, 255, 0))
         draw = ImageDraw.Draw(txt_img)
         
-        # 绘制文本到水印图层（考虑基线偏移）
-        draw.text((-bbox[0], -bbox[1]), text, font=font, fill=color)
+        # 绘制文本到水印图层（考虑基线偏移，并应用效果）
+        self.apply_text_effects(draw, text, (-bbox[0], -bbox[1]), font, color)
         
         # 应用旋转（围绕水印自身中心）
         if angle != 0:
             txt_img = txt_img.rotate(angle, expand=1, center=(w//2, h//2))
+            # 旋转后水印尺寸可能变化，需要重新计算位置
+            w, h = txt_img.size
+            if hasattr(self, 'dragging') and self.dragging:
+                pos = self.get_drag_position(preview.size, (w, h))
+            else:
+                pos = self.get_grid_position(preview.size, (w, h))
+        
+        # 应用额外的图像缩放来获得更大的水印
+        if scale_factor > 1.0:
+            # 如果缩放因子大于1，使用图像缩放来进一步放大
+            additional_scale = min(3.0, scale_factor)  # 最大额外缩放3倍
+            new_width = int(w * additional_scale)
+            new_height = int(h * additional_scale)
+            txt_img = txt_img.resize((new_width, new_height), Image.LANCZOS)
+            w, h = new_width, new_height
+            # 重新计算位置
+            if hasattr(self, 'dragging') and self.dragging:
+                pos = self.get_drag_position(preview.size, (w, h))
+            else:
+                pos = self.get_grid_position(preview.size, (w, h))
         
         # 将旋转后的水印放置到正确位置
         final_img = Image.new('RGBA', preview.size, (255, 255, 255, 0))
@@ -244,16 +455,27 @@ class WatermarkApp(QWidget):
         if not text:
             text = "水印文本"
             
-        # 使用默认字体设置
+        # 使用用户设置的字体、颜色和透明度
+        font_name, font_size, font_style = self.get_font_style()
+        opacity = self.opacity_slider.value() / 100.0  # 透明度百分比转小数
+        color = (self.text_color.red(), self.text_color.green(), self.text_color.blue(), int(255 * opacity))
+        scale_factor = self.scale_slider.value() / 100.0  # 缩放因子
+        
         try:
-            # 尝试加载系统字体，设置合适的大小
-            font = ImageFont.truetype("arial.ttf", 128)  # 使用128号字体
+            # 尝试加载用户选择的字体（应用缩放，使用更高质量）
+            scaled_font_size = max(10, int(font_size * scale_factor))
+            # 使用更高质量的字体加载方式
+            font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic")
         except:
-            # 如果失败，使用默认字体但设置更大尺寸
-            font = ImageFont.load_default()
-            # 对于默认字体，我们需要使用更大的尺寸
-        opacity = 0.8  # 默认透明度80%
-        color = (255, 255, 255, int(255 * opacity))  # 默认白色
+            # 如果失败，尝试使用其他字体
+            try:
+                # 尝试使用Arial字体
+                font = ImageFont.truetype("arial.ttf", scaled_font_size, encoding="unic")
+            except:
+                # 如果都失败，使用默认字体但设置更大的尺寸
+                font = ImageFont.load_default()
+                # 对于默认字体，我们需要使用更大的尺寸
+                scaled_font_size = max(10, int(font_size * scale_factor * 3))  # 默认字体三倍大小
             
         # 计算文本尺寸
         temp_img = Image.new('RGBA', (1, 1), (255, 255, 255, 0))
@@ -271,12 +493,26 @@ class WatermarkApp(QWidget):
         txt_img = Image.new('RGBA', (w, h), (255, 255, 255, 0))
         draw = ImageDraw.Draw(txt_img)
         
-        # 绘制文本到水印图层（考虑基线偏移）
-        draw.text((-bbox[0], -bbox[1]), text, font=font, fill=color)
+        # 绘制文本到水印图层（考虑基线偏移，并应用效果）
+        self.apply_text_effects(draw, text, (-bbox[0], -bbox[1]), font, color)
         
         # 应用旋转（围绕水印自身中心）
         if angle != 0:
             txt_img = txt_img.rotate(angle, expand=1, center=(w//2, h//2))
+            # 旋转后水印尺寸可能变化，需要重新计算位置
+            w, h = txt_img.size
+            pos = self.get_drag_position(img.size, (w, h))
+        
+        # 应用额外的图像缩放来获得更大的水印
+        if scale_factor > 1.0:
+            # 如果缩放因子大于1，使用图像缩放来进一步放大
+            additional_scale = min(3.0, scale_factor)  # 最大额外缩放3倍
+            new_width = int(w * additional_scale)
+            new_height = int(h * additional_scale)
+            txt_img = txt_img.resize((new_width, new_height), Image.LANCZOS)
+            w, h = new_width, new_height
+            # 重新计算位置
+            pos = self.get_drag_position(img.size, (w, h))
         
         # 将旋转后的水印放置到正确位置
         final_img = Image.new('RGBA', img.size, (255, 255, 255, 0))
