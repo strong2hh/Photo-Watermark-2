@@ -50,15 +50,81 @@ class WatermarkApp(QWidget):
         self.preview_label.mouseReleaseEvent = self.preview_mouse_release
         right_layout.addWidget(self.preview_label)
 
+        # 水印类型选择
+        type_layout = QHBoxLayout()
+        self.watermark_type = 'text'  # 默认文本水印
+        self.text_radio = QCheckBox('文本水印')
+        self.text_radio.setChecked(True)
+        self.text_radio.toggled.connect(self.toggle_watermark_type)
+        type_layout.addWidget(self.text_radio)
+        
+        self.image_radio = QCheckBox('图片水印')
+        self.image_radio.toggled.connect(self.toggle_watermark_type)
+        type_layout.addWidget(self.image_radio)
+        right_layout.addLayout(type_layout)
+
         # 文本水印设置
+        self.text_settings = QVBoxLayout()
         text_layout = QHBoxLayout()
         self.text_edit = QLineEdit()
         self.text_edit.setPlaceholderText('输入水印文本')
-        self.text_edit.setText('水印文本')
+        self.text_edit.setText('watermark')
         self.text_edit.textChanged.connect(self.update_preview)
         text_layout.addWidget(QLabel('水印文本:'))
         text_layout.addWidget(self.text_edit)
-        right_layout.addLayout(text_layout)
+        self.text_settings.addLayout(text_layout)
+
+        # 文本水印设置容器
+        self.text_settings_widget = QWidget()
+        self.text_settings = QVBoxLayout(self.text_settings_widget)
+        text_layout = QHBoxLayout()
+        self.text_edit = QLineEdit()
+        self.text_edit.setPlaceholderText('输入水印文本')
+        self.text_edit.setText('watermark')
+        self.text_edit.textChanged.connect(self.update_preview)
+        text_layout.addWidget(QLabel('水印文本:'))
+        text_layout.addWidget(self.text_edit)
+        self.text_settings.addLayout(text_layout)
+
+        # 图片水印设置容器
+        self.image_settings_widget = QWidget()
+        self.image_settings = QVBoxLayout(self.image_settings_widget)
+        image_select_layout = QHBoxLayout()
+        self.image_path_label = QLabel('未选择图片')
+        self.select_image_btn = QPushButton('选择图片')
+        self.select_image_btn.clicked.connect(self.select_watermark_image)
+        image_select_layout.addWidget(QLabel('水印图片:'))
+        image_select_layout.addWidget(self.image_path_label)
+        image_select_layout.addWidget(self.select_image_btn)
+        self.image_settings.addLayout(image_select_layout)
+
+        # 图片水印透明度
+        image_opacity_layout = QHBoxLayout()
+        self.image_opacity_slider = QSlider(Qt.Horizontal)
+        self.image_opacity_slider.setRange(0, 100)
+        self.image_opacity_slider.setValue(80)
+        self.image_opacity_slider.valueChanged.connect(self.update_preview)
+        image_opacity_layout.addWidget(QLabel('图片透明度:'))
+        image_opacity_layout.addWidget(self.image_opacity_slider)
+        self.image_opacity_label = QLabel('80%')
+        image_opacity_layout.addWidget(self.image_opacity_label)
+        self.image_settings.addLayout(image_opacity_layout)
+
+        # 图片水印缩放
+        image_scale_layout = QHBoxLayout()
+        self.image_scale_slider = QSlider(Qt.Horizontal)
+        self.image_scale_slider.setRange(10, 500)  # 10% 到 500%
+        self.image_scale_slider.setValue(100)
+        self.image_scale_slider.valueChanged.connect(self.update_preview)
+        image_scale_layout.addWidget(QLabel('图片缩放:'))
+        image_scale_layout.addWidget(self.image_scale_slider)
+        self.image_scale_label = QLabel('100%')
+        image_scale_layout.addWidget(self.image_scale_label)
+        self.image_settings.addLayout(image_scale_layout)
+
+        right_layout.addWidget(self.text_settings_widget)
+        right_layout.addWidget(self.image_settings_widget)
+        self.image_settings_widget.setVisible(False)  # 默认隐藏图片水印设置
 
         # 字体设置
         font_layout = QHBoxLayout()
@@ -162,6 +228,38 @@ class WatermarkApp(QWidget):
 
         layout.addLayout(right_layout)
         self.setLayout(layout)
+        
+        # 初始化图片水印相关变量
+        self.watermark_image_path = None
+        self.watermark_image = None
+
+    def toggle_watermark_type(self):
+        """切换水印类型"""
+        if self.text_radio.isChecked():
+            self.watermark_type = 'text'
+            self.text_settings_widget.setVisible(True)
+            self.image_settings_widget.setVisible(False)
+        elif self.image_radio.isChecked():
+            self.watermark_type = 'image'
+            self.text_settings_widget.setVisible(False)
+            self.image_settings_widget.setVisible(True)
+        self.update_preview()
+
+    def select_watermark_image(self):
+        """选择水印图片"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, '选择水印图片', '', 
+            '图片文件 (*.png *.jpg *.jpeg *.bmp *.tiff);;PNG文件 (*.png)'
+        )
+        if file_path:
+            self.watermark_image_path = file_path
+            self.image_path_label.setText(os.path.basename(file_path))
+            try:
+                # 加载水印图片
+                self.watermark_image = Image.open(file_path).convert('RGBA')
+                self.update_preview()
+            except Exception as e:
+                self.image_path_label.setText('加载失败')
         
         # 初始化预览
         self.update_preview()
@@ -326,120 +424,154 @@ class WatermarkApp(QWidget):
         img = Image.open(self.current_image_path).convert('RGBA')
         preview = img.copy()
         
-        # 获取水印文本
-        text = self.text_edit.text().strip()
-        if not text:
-            text = "watermark"
-            
-        # 使用用户设置的字体、颜色和透明度
-        font_name, font_size, font_style = self.get_font_style()
-        opacity = self.opacity_slider.value() / 100.0  # 透明度百分比转小数
-        color = (self.text_color.red(), self.text_color.green(), self.text_color.blue(), int(255 * opacity))
-        scale_factor = self.scale_slider.value() / 100.0  # 缩放因子
-        
-        try:
-            # 尝试加载用户选择的字体（应用缩放，使用更高质量）
-            scaled_font_size = max(10, int(font_size * scale_factor))
-            
-            # 应用粗体和斜体效果
-            if self.bold_check.isChecked() and self.italic_check.isChecked():
-                # 粗体+斜体
-                try:
-                    font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic", index=3)
-                except:
-                    font = ImageFont.truetype(font_name, int(scaled_font_size * 1.1), encoding="unic")
-            elif self.bold_check.isChecked():
-                # 仅粗体
-                try:
-                    font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic", index=1)
-                except:
-                    font = ImageFont.truetype(font_name, int(scaled_font_size * 1.1), encoding="unic")
-            elif self.italic_check.isChecked():
-                # 仅斜体 - 使用倾斜变换来模拟斜体效果
-                font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic")
-                # 斜体效果将在后续的文本绘制中处理
-            else:
-                # 正常字体
-                font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic")
+        if self.watermark_type == 'text':
+            # 文本水印处理
+            text = self.text_edit.text().strip()
+            if not text:
+                text = "watermark"
                 
-        except:
-            # 如果失败，尝试使用其他字体
+            # 使用用户设置的字体、颜色和透明度
+            font_name, font_size, font_style = self.get_font_style()
+            opacity = self.opacity_slider.value() / 100.0  # 透明度百分比转小数
+            color = (self.text_color.red(), self.text_color.green(), self.text_color.blue(), int(255 * opacity))
+            scale_factor = self.scale_slider.value() / 100.0  # 缩放因子
+            
             try:
-                # 尝试使用Arial字体
-                font = ImageFont.truetype("arial.ttf", scaled_font_size, encoding="unic")
+                # 尝试加载用户选择的字体（应用缩放，使用更高质量）
+                scaled_font_size = max(10, int(font_size * scale_factor))
                 
                 # 应用粗体和斜体效果
-                if self.bold_check.isChecked():
+                if self.bold_check.isChecked() and self.italic_check.isChecked():
+                    # 粗体+斜体
                     try:
-                        font = ImageFont.truetype("arialbd.ttf", scaled_font_size, encoding="unic")
+                        font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic", index=3)
                     except:
-                        bold_size = int(scaled_font_size * 1.1)
-                        font = ImageFont.truetype("arial.ttf", bold_size, encoding="unic")
-                        
+                        font = ImageFont.truetype(font_name, int(scaled_font_size * 1.1), encoding="unic")
+                elif self.bold_check.isChecked():
+                    # 仅粗体
+                    try:
+                        font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic", index=1)
+                    except:
+                        font = ImageFont.truetype(font_name, int(scaled_font_size * 1.1), encoding="unic")
+                elif self.italic_check.isChecked():
+                    # 仅斜体 - 使用倾斜变换来模拟斜体效果
+                    font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic")
+                    # 斜体效果将在后续的文本绘制中处理
+                else:
+                    # 正常字体
+                    font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic")
+                    
             except:
-                # 如果都失败，使用默认字体但设置更大的尺寸
-                font = ImageFont.load_default()
-                # 对于默认字体，我们需要使用更大的尺寸
-                scaled_font_size = max(10, int(font_size * scale_factor * 3))  # 默认字体三倍大小
+                # 如果失败，尝试使用其他字体
+                try:
+                    # 尝试使用Arial字体
+                    font = ImageFont.truetype("arial.ttf", scaled_font_size, encoding="unic")
+                    
+                    # 应用粗体和斜体效果
+                    if self.bold_check.isChecked():
+                        try:
+                            font = ImageFont.truetype("arialbd.ttf", scaled_font_size, encoding="unic")
+                        except:
+                            bold_size = int(scaled_font_size * 1.1)
+                            font = ImageFont.truetype("arial.ttf", bold_size, encoding="unic")
+                            
+                except:
+                    # 如果都失败，使用默认字体但设置更大的尺寸
+                    font = ImageFont.load_default()
+                    # 对于默认字体，我们需要使用更大的尺寸
+                    scaled_font_size = max(10, int(font_size * scale_factor * 3))  # 默认字体三倍大小
+                
+            # 计算文本尺寸
+            temp_img = Image.new('RGBA', (1, 1), (255, 255, 255, 0))
+            temp_draw = ImageDraw.Draw(temp_img)
+            bbox = temp_draw.textbbox((0, 0), text, font=font)
+            w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
             
-        # 计算文本尺寸
-        # 先创建一个临时图像来计算文本尺寸
-        temp_img = Image.new('RGBA', (1, 1), (255, 255, 255, 0))
-        temp_draw = ImageDraw.Draw(temp_img)
-        bbox = temp_draw.textbbox((0, 0), text, font=font)
-        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        
-        # 获取位置
-        if hasattr(self, 'dragging') and self.dragging:
-            # 使用拖拽位置
-            pos = self.get_drag_position(preview.size, (w, h))
-        else:
-            # 使用九宫格位置
-            pos = self.get_grid_position(preview.size, (w, h))
-            # 同步拖拽位置到九宫格位置
-            self.drag_position = QPoint(pos[0], pos[1])
-        
-        # 旋转
-        angle = self.rotate_slider.value()
-        
-        # 创建水印图层（包含文本的完整尺寸）
-        txt_img = Image.new('RGBA', (w, h), (255, 255, 255, 0))
-        draw = ImageDraw.Draw(txt_img)
-        
-        # 绘制文本到水印图层（考虑基线偏移，并应用效果）
-        self.apply_text_effects(draw, text, (-bbox[0], -bbox[1]), font, color)
-        
-        # 应用旋转（围绕水印自身中心）
-        if angle != 0:
-            txt_img = txt_img.rotate(angle, expand=1, center=(w//2, h//2))
-            # 旋转后水印尺寸可能变化，需要重新计算位置
-            w, h = txt_img.size
+            # 获取位置
             if hasattr(self, 'dragging') and self.dragging:
                 pos = self.get_drag_position(preview.size, (w, h))
             else:
                 pos = self.get_grid_position(preview.size, (w, h))
-        
-        # 应用额外的图像缩放来获得更大的水印
-        if scale_factor > 1.0:
-            # 如果缩放因子大于1，使用图像缩放来进一步放大
-            additional_scale = min(3.0, scale_factor)  # 最大额外缩放3倍
-            new_width = int(w * additional_scale)
-            new_height = int(h * additional_scale)
-            txt_img = txt_img.resize((new_width, new_height), Image.LANCZOS)
-            w, h = new_width, new_height
-            # 重新计算位置
+                self.drag_position = QPoint(pos[0], pos[1])
+            
+            # 旋转
+            angle = self.rotate_slider.value()
+            
+            # 创建水印图层
+            txt_img = Image.new('RGBA', (w, h), (255, 255, 255, 0))
+            draw = ImageDraw.Draw(txt_img)
+            
+            # 绘制文本到水印图层
+            self.apply_text_effects(draw, text, (-bbox[0], -bbox[1]), font, color)
+            
+            # 应用旋转
+            if angle != 0:
+                txt_img = txt_img.rotate(angle, expand=1, center=(w//2, h//2))
+                w, h = txt_img.size
+                if hasattr(self, 'dragging') and self.dragging:
+                    pos = self.get_drag_position(preview.size, (w, h))
+                else:
+                    pos = self.get_grid_position(preview.size, (w, h))
+            
+            # 应用额外的图像缩放
+            if scale_factor > 1.0:
+                additional_scale = min(3.0, scale_factor)
+                new_width = int(w * additional_scale)
+                new_height = int(h * additional_scale)
+                txt_img = txt_img.resize((new_width, new_height), Image.LANCZOS)
+                w, h = new_width, new_height
+                if hasattr(self, 'dragging') and self.dragging:
+                    pos = self.get_drag_position(preview.size, (w, h))
+                else:
+                    pos = self.get_grid_position(preview.size, (w, h))
+            
+            # 将水印放置到正确位置
+            final_img = Image.new('RGBA', preview.size, (255, 255, 255, 0))
+            final_img.paste(txt_img, pos, txt_img)
+            preview = Image.alpha_composite(preview, final_img)
+            
+        elif self.watermark_type == 'image' and self.watermark_image:
+            # 图片水印处理
+            watermark_img = self.watermark_image.copy()
+            
+            # 应用图片透明度
+            image_opacity = self.image_opacity_slider.value() / 100.0
+            if image_opacity < 1.0:
+                # 创建透明水印
+                alpha = watermark_img.split()[3]
+                alpha = alpha.point(lambda p: p * image_opacity)
+                watermark_img.putalpha(alpha)
+            
+            # 应用图片缩放
+            image_scale = self.image_scale_slider.value() / 100.0
+            if image_scale != 1.0:
+                new_width = int(watermark_img.width * image_scale)
+                new_height = int(watermark_img.height * image_scale)
+                watermark_img = watermark_img.resize((new_width, new_height), Image.LANCZOS)
+            
+            w, h = watermark_img.size
+            
+            # 获取位置
             if hasattr(self, 'dragging') and self.dragging:
                 pos = self.get_drag_position(preview.size, (w, h))
             else:
                 pos = self.get_grid_position(preview.size, (w, h))
-        
-        # 将旋转后的水印放置到正确位置
-        final_img = Image.new('RGBA', preview.size, (255, 255, 255, 0))
-        final_img.paste(txt_img, pos, txt_img)
-        txt_img = final_img
-        
-        # 合成图片
-        preview = Image.alpha_composite(preview, txt_img)
+                self.drag_position = QPoint(pos[0], pos[1])
+            
+            # 应用旋转
+            angle = self.rotate_slider.value()
+            if angle != 0:
+                watermark_img = watermark_img.rotate(angle, expand=1, center=(w//2, h//2))
+                w, h = watermark_img.size
+                if hasattr(self, 'dragging') and self.dragging:
+                    pos = self.get_drag_position(preview.size, (w, h))
+                else:
+                    pos = self.get_grid_position(preview.size, (w, h))
+            
+            # 将图片水印放置到正确位置
+            final_img = Image.new('RGBA', preview.size, (255, 255, 255, 0))
+            final_img.paste(watermark_img, pos, watermark_img)
+            preview = Image.alpha_composite(preview, final_img)
         
         # 显示预览
         qimg = QImage(preview.tobytes(), preview.size[0], preview.size[1], QImage.Format_RGBA8888)
@@ -450,77 +582,114 @@ class WatermarkApp(QWidget):
         """为单张图片添加水印"""
         img = Image.open(image_path).convert('RGBA')
         
-        # 获取水印文本
-        text = self.text_edit.text().strip()
-        if not text:
-            text = "水印文本"
+        if self.watermark_type == 'text':
+            # 文本水印处理
+            text = self.text_edit.text().strip()
+            if not text:
+                text = "watermark"
+                
+            # 使用用户设置的字体、颜色和透明度
+            font_name, font_size, font_style = self.get_font_style()
+            opacity = self.opacity_slider.value() / 100.0  # 透明度百分比转小数
+            color = (self.text_color.red(), self.text_color.green(), self.text_color.blue(), int(255 * opacity))
+            scale_factor = self.scale_slider.value() / 100.0  # 缩放因子
             
-        # 使用用户设置的字体、颜色和透明度
-        font_name, font_size, font_style = self.get_font_style()
-        opacity = self.opacity_slider.value() / 100.0  # 透明度百分比转小数
-        color = (self.text_color.red(), self.text_color.green(), self.text_color.blue(), int(255 * opacity))
-        scale_factor = self.scale_slider.value() / 100.0  # 缩放因子
-        
-        try:
-            # 尝试加载用户选择的字体（应用缩放，使用更高质量）
-            scaled_font_size = max(10, int(font_size * scale_factor))
-            # 使用更高质量的字体加载方式
-            font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic")
-        except:
-            # 如果失败，尝试使用其他字体
             try:
-                # 尝试使用Arial字体
-                font = ImageFont.truetype("arial.ttf", scaled_font_size, encoding="unic")
+                # 尝试加载用户选择的字体（应用缩放，使用更高质量）
+                scaled_font_size = max(10, int(font_size * scale_factor))
+                # 使用更高质量的字体加载方式
+                font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic")
             except:
-                # 如果都失败，使用默认字体但设置更大的尺寸
-                font = ImageFont.load_default()
-                # 对于默认字体，我们需要使用更大的尺寸
-                scaled_font_size = max(10, int(font_size * scale_factor * 3))  # 默认字体三倍大小
+                # 如果失败，尝试使用其他字体
+                try:
+                    # 尝试使用Arial字体
+                    font = ImageFont.truetype("arial.ttf", scaled_font_size, encoding="unic")
+                except:
+                    # 如果都失败，使用默认字体但设置更大的尺寸
+                    font = ImageFont.load_default()
+                    # 对于默认字体，我们需要使用更大的尺寸
+                    scaled_font_size = max(10, int(font_size * scale_factor * 3))  # 默认字体三倍大小
+                
+            # 计算文本尺寸
+            temp_img = Image.new('RGBA', (1, 1), (255, 255, 255, 0))
+            temp_draw = ImageDraw.Draw(temp_img)
+            bbox = temp_draw.textbbox((0, 0), text, font=font)
+            w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
             
-        # 计算文本尺寸
-        temp_img = Image.new('RGBA', (1, 1), (255, 255, 255, 0))
-        temp_draw = ImageDraw.Draw(temp_img)
-        bbox = temp_draw.textbbox((0, 0), text, font=font)
-        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        
-        # 获取位置（使用当前拖拽位置）
-        pos = self.get_drag_position(img.size, (w, h))
-        
-        # 旋转
-        angle = self.rotate_slider.value()
-        
-        # 创建水印图层（包含文本的完整尺寸）
-        txt_img = Image.new('RGBA', (w, h), (255, 255, 255, 0))
-        draw = ImageDraw.Draw(txt_img)
-        
-        # 绘制文本到水印图层（考虑基线偏移，并应用效果）
-        self.apply_text_effects(draw, text, (-bbox[0], -bbox[1]), font, color)
-        
-        # 应用旋转（围绕水印自身中心）
-        if angle != 0:
-            txt_img = txt_img.rotate(angle, expand=1, center=(w//2, h//2))
-            # 旋转后水印尺寸可能变化，需要重新计算位置
-            w, h = txt_img.size
+            # 获取位置（使用当前拖拽位置）
             pos = self.get_drag_position(img.size, (w, h))
-        
-        # 应用额外的图像缩放来获得更大的水印
-        if scale_factor > 1.0:
-            # 如果缩放因子大于1，使用图像缩放来进一步放大
-            additional_scale = min(3.0, scale_factor)  # 最大额外缩放3倍
-            new_width = int(w * additional_scale)
-            new_height = int(h * additional_scale)
-            txt_img = txt_img.resize((new_width, new_height), Image.LANCZOS)
-            w, h = new_width, new_height
-            # 重新计算位置
+            
+            # 旋转
+            angle = self.rotate_slider.value()
+            
+            # 创建水印图层（包含文本的完整尺寸）
+            txt_img = Image.new('RGBA', (w, h), (255, 255, 255, 0))
+            draw = ImageDraw.Draw(txt_img)
+            
+            # 绘制文本到水印图层（考虑基线偏移，并应用效果）
+            self.apply_text_effects(draw, text, (-bbox[0], -bbox[1]), font, color)
+            
+            # 应用旋转（围绕水印自身中心）
+            if angle != 0:
+                txt_img = txt_img.rotate(angle, expand=1, center=(w//2, h//2))
+                # 旋转后水印尺寸可能变化，需要重新计算位置
+                w, h = txt_img.size
+                pos = self.get_drag_position(img.size, (w, h))
+            
+            # 应用额外的图像缩放来获得更大的水印
+            if scale_factor > 1.0:
+                # 如果缩放因子大于1，使用图像缩放来进一步放大
+                additional_scale = min(3.0, scale_factor)  # 最大额外缩放3倍
+                new_width = int(w * additional_scale)
+                new_height = int(h * additional_scale)
+                txt_img = txt_img.resize((new_width, new_height), Image.LANCZOS)
+                w, h = new_width, new_height
+                # 重新计算位置
+                pos = self.get_drag_position(img.size, (w, h))
+            
+            # 将旋转后的水印放置到正确位置
+            final_img = Image.new('RGBA', img.size, (255, 255, 255, 0))
+            final_img.paste(txt_img, pos, txt_img)
+            txt_img = final_img
+            
+            # 合成图片
+            img = Image.alpha_composite(img, txt_img)
+            
+        elif self.watermark_type == 'image' and self.watermark_image:
+            # 图片水印处理
+            watermark_img = self.watermark_image.copy()
+            
+            # 应用图片透明度
+            image_opacity = self.image_opacity_slider.value() / 100.0
+            if image_opacity < 1.0:
+                # 创建透明水印
+                alpha = watermark_img.split()[3]
+                alpha = alpha.point(lambda p: p * image_opacity)
+                watermark_img.putalpha(alpha)
+            
+            # 应用图片缩放
+            image_scale = self.image_scale_slider.value() / 100.0
+            if image_scale != 1.0:
+                new_width = int(watermark_img.width * image_scale)
+                new_height = int(watermark_img.height * image_scale)
+                watermark_img = watermark_img.resize((new_width, new_height), Image.LANCZOS)
+            
+            w, h = watermark_img.size
+            
+            # 获取位置
             pos = self.get_drag_position(img.size, (w, h))
-        
-        # 将旋转后的水印放置到正确位置
-        final_img = Image.new('RGBA', img.size, (255, 255, 255, 0))
-        final_img.paste(txt_img, pos, txt_img)
-        txt_img = final_img
-        
-        # 合成图片
-        img = Image.alpha_composite(img, txt_img)
+            
+            # 应用旋转
+            angle = self.rotate_slider.value()
+            if angle != 0:
+                watermark_img = watermark_img.rotate(angle, expand=1, center=(w//2, h//2))
+                w, h = watermark_img.size
+                pos = self.get_drag_position(img.size, (w, h))
+            
+            # 将图片水印放置到正确位置
+            final_img = Image.new('RGBA', img.size, (255, 255, 255, 0))
+            final_img.paste(watermark_img, pos, watermark_img)
+            img = Image.alpha_composite(img, final_img)
         
         return img
 
