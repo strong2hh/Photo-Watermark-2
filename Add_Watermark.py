@@ -144,7 +144,7 @@ class WatermarkApp(QWidget):
         self.font_size_spin = QComboBox()
         self.font_size_spin.addItems(["96", "128", "160", "192", "256", "320", "480", "640"])
         self.font_size_spin.setCurrentText("96")
-        self.font_size_spin.currentTextChanged.connect(self.update_preview)
+        self.font_size_spin.currentIndexChanged.connect(self.update_preview)
         font_layout.addWidget(QLabel('字号:'))
         font_layout.addWidget(self.font_size_spin)
         
@@ -524,13 +524,14 @@ class WatermarkApp(QWidget):
 
     def get_font_style(self):
         """获取字体样式设置"""
-        font_name = self.current_font_name if hasattr(self, 'current_font_name') else self.font_combo.currentText()
-        font_size = self.current_font_size if hasattr(self, 'current_font_size') else int(self.font_size_spin.currentText())
+        # 优先使用控件的当前值，确保实时更新
+        font_name = self.font_combo.currentText()
+        font_size = int(self.font_size_spin.currentText())
         
         # 构建字体样式字符串
         style = ""
-        bold = self.current_bold if hasattr(self, 'current_bold') else self.bold_check.isChecked()
-        italic = self.current_italic if hasattr(self, 'current_italic') else self.italic_check.isChecked()
+        bold = self.bold_check.isChecked()
+        italic = self.italic_check.isChecked()
         
         if bold:
             style += "bold "
@@ -594,45 +595,49 @@ class WatermarkApp(QWidget):
             color = (self.text_color.red(), self.text_color.green(), self.text_color.blue(), int(255 * opacity))
             scale_factor = self.scale_slider.value() / 100.0  # 缩放因子
             
+            # 尝试加载用户选择的字体（应用缩放，使用更高质量）
+            scaled_font_size = max(10, int(font_size * scale_factor))
+            
+            # 字体名称映射，将常见的中文字体名称映射到系统字体文件
+            font_mapping = {
+                "SimHei": "simhei.ttf",  # 黑体
+                "Microsoft YaHei": "msyh.ttc",  # 微软雅黑
+                "SimSun": "simsun.ttc",  # 宋体
+                "Arial": "arial.ttf",
+                "Times New Roman": "times.ttf"
+            }
+            
+            # 获取对应的字体文件名
+            font_file = font_mapping.get(font_name, font_name)
+            
             try:
-                # 尝试加载用户选择的字体（应用缩放，使用更高质量）
-                scaled_font_size = max(10, int(font_size * scale_factor))
+                # 首先尝试直接加载字体文件
+                font = ImageFont.truetype(font_file, scaled_font_size, encoding="unic")
                 
                 # 应用粗体和斜体效果
                 if self.bold_check.isChecked() and self.italic_check.isChecked():
-                    # 粗体+斜体
+                    # 粗体+斜体 - 尝试加载粗斜体版本
                     try:
-                        font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic", index=3)
+                        font = ImageFont.truetype(font_file, scaled_font_size, encoding="unic", index=3)
                     except:
-                        font = ImageFont.truetype(font_name, int(scaled_font_size * 1.1), encoding="unic")
+                        # 如果失败，使用更大的字号模拟粗体效果
+                        font = ImageFont.truetype(font_file, int(scaled_font_size * 1.2), encoding="unic")
                 elif self.bold_check.isChecked():
-                    # 仅粗体
+                    # 仅粗体 - 尝试加载粗体版本
                     try:
-                        font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic", index=1)
+                        font = ImageFont.truetype(font_file, scaled_font_size, encoding="unic", index=1)
                     except:
-                        font = ImageFont.truetype(font_name, int(scaled_font_size * 1.1), encoding="unic")
+                        # 如果失败，使用更大的字号模拟粗体效果
+                        font = ImageFont.truetype(font_file, int(scaled_font_size * 1.1), encoding="unic")
                 elif self.italic_check.isChecked():
                     # 仅斜体 - 使用倾斜变换来模拟斜体效果
-                    font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic")
+                    font = ImageFont.truetype(font_file, scaled_font_size, encoding="unic")
                     # 斜体效果将在后续的文本绘制中处理
-                else:
-                    # 正常字体
-                    font = ImageFont.truetype(font_name, scaled_font_size, encoding="unic")
                     
-            except:
-                # 如果失败，尝试使用其他字体
+            except Exception as e:
+                # 如果加载失败，尝试使用系统默认字体
                 try:
-                    # 尝试使用Arial字体
                     font = ImageFont.truetype("arial.ttf", scaled_font_size, encoding="unic")
-                    
-                    # 应用粗体和斜体效果
-                    if self.bold_check.isChecked():
-                        try:
-                            font = ImageFont.truetype("arialbd.ttf", scaled_font_size, encoding="unic")
-                        except:
-                            bold_size = int(scaled_font_size * 1.1)
-                            font = ImageFont.truetype("arial.ttf", bold_size, encoding="unic")
-                            
                 except:
                     # 如果都失败，使用默认字体但设置更大的尺寸
                     font = ImageFont.load_default()

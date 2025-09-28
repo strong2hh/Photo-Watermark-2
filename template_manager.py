@@ -1,4 +1,4 @@
-mport json
+import json
 import os
 from datetime import datetime
 from PyQt5.QtCore import QSettings
@@ -140,22 +140,18 @@ def apply_template_to_app(template_data, app_instance):
             app_instance.text_radio.setChecked(True)
         if hasattr(app_instance, 'image_radio'):
             app_instance.image_radio.setChecked(False)
-        # 直接显示文本设置，隐藏图片设置
-        if hasattr(app_instance, 'text_settings_widget'):
-            app_instance.text_settings_widget.setVisible(True)
-        if hasattr(app_instance, 'image_settings_widget'):
-            app_instance.image_settings_widget.setVisible(False)
+        # 调用切换方法确保界面正确更新
+        if hasattr(app_instance, 'toggle_watermark_type'):
+            app_instance.toggle_watermark_type()
     else:
         app_instance.watermark_type = "image"
         if hasattr(app_instance, 'text_radio'):
             app_instance.text_radio.setChecked(False)
         if hasattr(app_instance, 'image_radio'):
             app_instance.image_radio.setChecked(True)
-        # 直接显示图片设置，隐藏文本设置
-        if hasattr(app_instance, 'text_settings_widget'):
-            app_instance.text_settings_widget.setVisible(False)
-        if hasattr(app_instance, 'image_settings_widget'):
-            app_instance.image_settings_widget.setVisible(True)
+        # 调用切换方法确保界面正确更新
+        if hasattr(app_instance, 'toggle_watermark_type'):
+            app_instance.toggle_watermark_type()
     
     # 确保内部状态变量正确设置
     app_instance.current_text = template_data["text_content"] if hasattr(app_instance, 'current_text') else template_data["text_content"]
@@ -174,14 +170,27 @@ def apply_template_to_app(template_data, app_instance):
         app_instance.text_edit.textChanged.emit(template_data["text_content"])
     
     if hasattr(app_instance, 'font_combo'):
-        app_instance.font_combo.setCurrentText(template_data["font_name"])
-        # 手动触发字体变化信号
-        app_instance.font_combo.currentTextChanged.emit(template_data["font_name"])
+        # 设置字体并确保触发更新
+        font_index = app_instance.font_combo.findText(template_data["font_name"])
+        if font_index >= 0:
+            app_instance.font_combo.setCurrentIndex(font_index)
+        else:
+            app_instance.font_combo.setCurrentText(template_data["font_name"])
+        # 直接调用更新预览方法
+        if hasattr(app_instance, 'update_preview'):
+            app_instance.update_preview()
     
     if hasattr(app_instance, 'font_size_spin'):
-        app_instance.font_size_spin.setCurrentText(str(template_data["font_size"]))
-        # 手动触发字号变化信号
-        app_instance.font_size_spin.currentTextChanged.emit(str(template_data["font_size"]))
+        # 设置字号并确保触发更新
+        size_text = str(template_data["font_size"])
+        size_index = app_instance.font_size_spin.findText(size_text)
+        if size_index >= 0:
+            app_instance.font_size_spin.setCurrentIndex(size_index)
+        else:
+            app_instance.font_size_spin.setCurrentText(size_text)
+        # 直接调用更新预览方法
+        if hasattr(app_instance, 'update_preview'):
+            app_instance.update_preview()
     
     if hasattr(app_instance, 'bold_check'):
         app_instance.bold_check.setChecked(template_data["bold"])
@@ -248,7 +257,8 @@ def apply_template_to_app(template_data, app_instance):
         if hasattr(app_instance, 'image_path_label'):
             app_instance.image_path_label.setText(os.path.basename(template_data["image_path"]))
         try:
-            app_instance.watermark_image = app_instance.watermark_image.__class__.open(template_data["image_path"]).convert('RGBA')
+            from PIL import Image
+            app_instance.watermark_image = Image.open(template_data["image_path"]).convert('RGBA')
         except:
             app_instance.watermark_image = None
     
